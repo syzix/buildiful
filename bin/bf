@@ -171,7 +171,7 @@ function maxjobs {
 
 function _numjobs {
 	# FIXME: numcpus
-	numjobs="1"
+	numjobs="${NUMJOBS:-1}"
 }
 
 function numjobs {
@@ -436,7 +436,7 @@ function standard_autoconf_build {
 		fi
 	done
 	# FIXME: use $numjobs and $maxjobs
-	make || fail
+	make -j$numjobs || make || fail
 	DESTDIR="$ROOT" make install || fail
 	make clean || fail
 }
