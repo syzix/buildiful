@@ -267,7 +267,7 @@ function runtime_deps {
 
 function _configure_args {
 	basedir
-	configure_args+=( --prefix="$basedir" --build="$arch-syzix-linux" )
+	configure_args+=( --prefix="$basedir" --build="${arch%-*}-syzix-${arch#*-}")
 }
 
 function configure_args {
