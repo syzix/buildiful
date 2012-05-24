@@ -998,9 +998,7 @@ function do_build {
 	failed_deps=()
 	for i in "${build_deps[@]}" "${runtime_deps[@]}"; do
 		info "Resolving dependency $i... build"
-		# FIXME: use "syz ensure" instead of "syz load"
-		#if syz ensure "$i"; then
-		if syz load "$i"; then    # ensure doesn't exist yet, just use load for now...
+		if syz ensure "$i" || syz load "$i"; then
 			echo "done"
 		else
 			echo "unable to load, attempting to build instead"
