@@ -138,10 +138,27 @@ function supported_version {
 	_supported_version
 }
 
+
+function _default_kernel {
+	default_kernel="${KERNEL:-$(uname -s)}"
+	default_kernel="${default_kernel,,}"
+}
+
+function default_kernel {
+	_default_kernel
+}
+
+function _supported_kernel {
+	return 0
+}
+
+function supported_kernel {
+	_supported_kernel
+}
+
+
 function _default_arch {
-	local kernel="$(uname -s)"
-	kernel="${kernel,,}"
-	default_arch="${ARCH:-$(uname -m)-$kernel}"
+	default_arch="${ARCH:-$(uname -m)}"
 	# I think I got this from SBo, but now I'm not so sure it's a good idea...
 	#case "$default_arch" in
 	#	i?86) default_arch=i486 ;;
@@ -160,6 +177,23 @@ function _supported_arch {
 function supported_arch {
 	_supported_arch
 }
+
+
+function _default_sysarch {
+	default_arch
+	default_kernel
+	if [ "$default_arch" = "noarch" ]; then
+		default_sysarch="$default_arch"
+	else
+		local k="${kernel:-$default_kernel}"
+		default_sysarch="${arch:-$default_arch}${k:+-}${k}"
+	fi
+}
+
+function default_sysarch {
+	_default_sysarch
+}
+
 
 function _maxjobs {
 	maxjobs=""
@@ -267,7 +301,7 @@ function runtime_deps {
 
 function _configure_args {
 	basedir
-	configure_args+=( --prefix="$basedir" --build="${arch%-*}-syzix-${arch#*-}")
+	configure_args+=( --prefix="$basedir" --build="$arch-syzix-$kernel")
 }
 
 function configure_args {
@@ -558,7 +592,7 @@ function _basedir {
 	#basedir="$repo/$arch/$pkgname/$versionbuild"
 	#basedir="$ROOT/$prefix/$repo/$arch/$pkgname/$versionbuild"
 	#basedir="/$prefix/$repo/$arch/$pkgname/$versionbuild"
-	basedir="/$repo/$arch/$pkgname/$versionbuild"
+	basedir="/$repo/$sysarch/$pkgname/$versionbuild"
 	# FIXME: remove consecutive //// slashes
 	basedir="${basedir//+(\/)//}"
 }
@@ -584,7 +618,7 @@ function _sffile {
 	# Hmmm...
 	#sffile="$ROOT/$prefix/$repo/$arch/.sf/$pkgname/$versionbuild"
 	#sffile="$ROOT/$repo/$arch/.sf/$pkgname/$versionbuild"
-	sffile="/$repo/$arch/.sf/$pkgname/$versionbuild"
+	sffile="/$repo/$sysarch/.sf/$pkgname/$versionbuild"
 	# FIXME: remove consecutive //// slashes
 	sffile="${sffile//+(\/)//}"
 }
@@ -605,11 +639,11 @@ function _CFLAGS {
 	# FIXME: don't blindly += when CFLAGS might already have -O2, etc in it.
 	# By the same token, don't kill what the user might already have put in CFLAGS.
 	# This is really a job for modules... hehehe.
-	if [ "$ARCH" = "i486" ]; then
+	if [ "$arch" = "i486" ]; then
 	  CFLAGS+=" -O2 -march=i486 -mtune=i686"
-	elif [ "$ARCH" = "i686" ]; then
+	elif [ "$arch" = "i686" ]; then
 	  CFLAGS+=" -O2 -march=i686 -mtune=i686"
-	elif [ "$ARCH" = "x86_64" ]; then
+	elif [ "$arch" = "x86_64" ]; then
 	  CFLAGS+=" -O2 -fPIC"
 	else
 	  CFLAGS+=" -O2"
@@ -625,11 +659,11 @@ function _CXXFLAGS {
 	# FIXME: don't blindly += when CFLAGS might already have -O2, etc in it.
 	# By the same token, don't kill what the user might already have put in CFLAGS.
 	# This is really a job for modules... hehehe.
-	if [ "$ARCH" = "i486" ]; then
+	if [ "$arch" = "i486" ]; then
 	  CXXFLAGS+=" -O2 -march=i486 -mtune=i686"
-	elif [ "$ARCH" = "i686" ]; then
+	elif [ "$arch" = "i686" ]; then
 	  CXXFLAGS+=" -O2 -march=i686 -mtune=i686"
-	elif [ "$ARCH" = "x86_64" ]; then
+	elif [ "$arch" = "x86_64" ]; then
 	  CXXFLAGS+=" -O2 -fPIC"
 	else
 	  CXXFLAGS+=" -O2"
@@ -792,6 +826,7 @@ function do_build {
 		echo "Variables:"
 		echo "  version=<version>"
 		echo "  arch=<arch>"
+		echo "  kernel=<kernel>"
 		echo "  build=<build>"
 		echo "  repo=<repo>"
 		#echo "  prefix=<prefix>"
@@ -927,6 +962,10 @@ function do_build {
 	version="${version:-$default_version}"
 	default_arch
 	arch="${arch:-$default_arch}"
+	default_kernel
+	kernel="${kernel:-$default_kernel}"
+	default_sysarch
+	sysarch="${sysarch:-$default_sysarch}"
 	default_repo
 	repo="${repo:-$default_repo}"
 	#default_prefix
@@ -936,13 +975,13 @@ function do_build {
 
 
 	#############
-	# AT THIS POINT, $pkgname, $version, $arch, $repo ARE SET
+	# AT THIS POINT, $pkgname, $version, $arch, $kernel, $sysarch, $repo ARE SET
 	#############
 
 	#basedir="$BASE_SW/$repo/$arch/$pkgname/$version-$build"
 	basedir
 
-	for i in pkgname version arch repo build basedir; do
+	for i in pkgname version arch kernel sysarch repo build basedir; do
 		#echo "$i=${!i}"
 		info "$(declare -p "$i")"
 	done
@@ -952,8 +991,16 @@ function do_build {
 		error 1 "version $version is not supported"
 	fi
 
+	if ! supported_arch; then
+		error 1 "arch $arch is not supported"
+	fi
+
+	if ! supported_kernel; then
+		error 1 "kernel $kernel is not supported"
+	fi
+
 	#for i in "${possible_vars[@]}"; do
-	for i in default_{{,{,un}stable_}version,arch,repo,build} version_separator source_location source_checksum archive_name archive_dir source_dir configure_args fetcher {C{,XX},LD}FLAGS; do
+	for i in default_{{,{,un}stable_}version,arch,kernel,sysarch,repo,build} version_separator source_location source_checksum archive_name archive_dir source_dir configure_args fetcher {C{,XX},LD}FLAGS; do
 		"$i"
 		#j="$i[@]"
 		#echo "$i=${!j}"
